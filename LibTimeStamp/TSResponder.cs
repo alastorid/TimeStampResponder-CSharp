@@ -3,6 +3,7 @@ using Org.BouncyCastle.Asn1.Cms;
 using Org.BouncyCastle.Cms;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Operators;
+using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Tsp;
@@ -24,9 +25,42 @@ namespace LibTimeStamp
         string hashAlg;
         public TSResponder(byte[] x509Cert, byte[] priKey, string hashAlg)
         {
+            //this.x509Cert = new X509CertificateParser().ReadCertificate(x509Cert);
+            //this.priKey = ((AsymmetricCipherKeyPair)(new PemReader(new StreamReader(new MemoryStream(priKey))).ReadObject())).Private;
+            //this.x509Store = X509StoreFactory.Create("Certificate/Collection",new X509CollectionStoreParameters(new X509CertificateParser().ReadCertificates(x509Cert)));
+            //this.hashAlg = hashAlg;
+            // 解析证书
             this.x509Cert = new X509CertificateParser().ReadCertificate(x509Cert);
-            this.priKey = ((AsymmetricCipherKeyPair)(new PemReader(new StreamReader(new MemoryStream(priKey))).ReadObject())).Private;
-            this.x509Store = X509StoreFactory.Create("Certificate/Collection",new X509CollectionStoreParameters(new X509CertificateParser().ReadCertificates(x509Cert)));
+
+            // 读取私钥
+            using (var memoryStream = new MemoryStream(priKey))
+            {
+                // 创建 PemReader 对象
+                var reader = new PemReader(new StreamReader(memoryStream));
+
+                // 读取 PEM 文件并解析为私钥
+                object pemObject = reader.ReadObject();
+
+                // 判断是否为 PKCS1 格式
+                if (pemObject is RsaKeyParameters rsaPrivateKey)  // PKCS1 格式
+                {
+                    this.priKey = rsaPrivateKey;
+                }
+                // 如果是 PKCS8 格式，可以考虑用下面的方式进行处理
+                else if (pemObject is AsymmetricCipherKeyPair keyPair && keyPair.Private is RsaKeyParameters rsaKeyPairPrivateKey)
+                {
+                    this.priKey = rsaKeyPairPrivateKey;
+                }
+                else
+                {
+                    throw new InvalidCastException("私钥类型不匹配");
+                }
+            }
+
+            // 初始化证书存储
+            this.x509Store = X509StoreFactory.Create("Certificate/Collection", new X509CollectionStoreParameters(new X509CertificateParser().ReadCertificates(x509Cert)));
+
+            // 保存哈希算法
             this.hashAlg = hashAlg;
         }
         public byte[] GenResponse(byte[] bRequest, DateTime signTime, out bool isRFC, byte[] bSerial = null)
